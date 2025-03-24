@@ -8,6 +8,7 @@
 #include <pqxx/pqxx>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+#include <openssl/kdf.h>
 #include <chrono>
 #include <iomanip>
 #include <random>
@@ -301,27 +302,39 @@ AuthService::Register(const std::string& username, const std::string& password, 
 }
 
 std::string AuthService::HashPassword(const std::string& password, const std::string& salt) {
+    // 使用PBKDF2进行密码哈希
+    const int iterations = 10000;  // 迭代次数
+    const int key_length = 32;     // 输出长度，以字节为单位
+    
+    unsigned char out[key_length];
+    
     // 组合密码和盐值
     std::string salted_password = password + salt;
     
-    // 使用SHA-256哈希
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256(reinterpret_cast<const unsigned char*>(salted_password.c_str()), 
-           salted_password.size(), 
-           hash);
+    // 使用PBKDF2-HMAC-SHA256进行密码哈希
+    PKCS5_PBKDF2_HMAC(
+        salted_password.c_str(), 
+        salted_password.length(),
+        reinterpret_cast<const unsigned char*>(salt.c_str()),
+        salt.length(),
+        iterations,
+        EVP_sha256(),
+        key_length,
+        out
+    );
     
     // 转换为十六进制字符串
     std::stringstream ss;
     ss << std::hex << std::setfill('0');
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        ss << std::setw(2) << static_cast<int>(hash[i]);
+    for (int i = 0; i < key_length; i++) {
+        ss << std::setw(2) << static_cast<int>(out[i]);
     }
     
     return ss.str();
 }
 
 std::string AuthService::GenerateSalt() {
-    // 生成随机盐值
+    // 生成32字节的随机盐值
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(0, 255);
@@ -331,7 +344,7 @@ std::string AuthService::GenerateSalt() {
         byte = static_cast<unsigned char>(dis(gen));
     }
     
-    // 转换为Base64
+    // 转换为十六进制字符串
     std::stringstream ss;
     ss << std::hex << std::setfill('0');
     for (auto byte : salt_bytes) {

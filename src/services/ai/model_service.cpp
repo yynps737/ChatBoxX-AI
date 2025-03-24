@@ -161,23 +161,33 @@ void ModelService::ResetModel(const std::string& model_id) {
 
 std::shared_ptr<ModelInterface> 
 ModelService::GetOrCreateModel(const std::string& model_id) const {
-    // 先查找缓存
+    // 第一次检查：不加锁
     {
-        std::lock_guard<std::mutex> lock(models_mutex_);
+        std::shared_lock<std::shared_mutex> lock(models_mutex_);
         auto it = models_.find(model_id);
         if (it != models_.end()) {
             return it->second;
         }
     }
     
-    // 创建新实例
-    auto model = ModelFactory::GetInstance().CreateModel(model_id);
-    if (model) {
-        std::lock_guard<std::mutex> lock(models_mutex_);
-        models_[model_id] = model;
+    // 第二次检查：加写锁
+    {
+        std::unique_lock<std::shared_mutex> lock(models_mutex_);
+        // 再次检查，避免在获取锁的过程中其他线程已经创建了模型
+        auto it = models_.find(model_id);
+        if (it != models_.end()) {
+            return it->second;
+        }
+        
+        // 创建新实例
+        auto model = ModelFactory::GetInstance().CreateModel(model_id);
+        if (model) {
+            auto [it, _] = models_.emplace(model_id, model);
+            return it->second;
+        }
     }
     
-    return model;
+    return nullptr;
 }
 
 } // namespace ai_backend::services::ai

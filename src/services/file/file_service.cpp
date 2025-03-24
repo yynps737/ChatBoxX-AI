@@ -168,6 +168,49 @@ FileService::SaveFile(const models::File& file_info, const std::vector<uint8_t>&
             co_return common::Result<models::File>::Error("不支持的文件类型");
         }
         
+        // 验证文件类型与Content-Type匹配
+        bool type_match = false;
+        
+        // 图片类型验证
+        if (extension == ".jpg" || extension == ".jpeg") {
+            type_match = (file_info.type == "image/jpeg");
+            // 验证JPEG文件头
+            if (data.size() >= 2 && data[0] == 0xFF && data[1] == 0xD8) {
+                type_match = true;
+            }
+        } else if (extension == ".png") {
+            type_match = (file_info.type == "image/png");
+            // 验证PNG文件头
+            if (data.size() >= 8 && 
+                data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 &&
+                data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A) {
+                type_match = true;
+            }
+        } else if (extension == ".gif") {
+            type_match = (file_info.type == "image/gif");
+            // 验证GIF文件头
+            if (data.size() >= 6 && 
+                data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && 
+                data[3] == 0x38 && (data[4] == 0x39 || data[4] == 0x37) && data[5] == 0x61) {
+                type_match = true;
+            }
+        } else if (extension == ".pdf") {
+            type_match = (file_info.type == "application/pdf");
+            // 验证PDF文件头
+            if (data.size() >= 5 && 
+                data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && 
+                data[3] == 0x46 && data[4] == 0x2D) {
+                type_match = true;
+            }
+        } else {
+            // 其他文件类型，简单验证Content-Type
+            type_match = true;
+        }
+        
+        if (!type_match) {
+            co_return common::Result<models::File>::Error("文件类型与扩展名不匹配");
+        }
+        
         // 生成文件ID和存储路径
         std::string file_id = core::utils::UuidGenerator::GenerateUuid();
         std::string safe_filename = SanitizeFilename(file_info.name);

@@ -9,11 +9,21 @@
 #include <openssl/evp.h>
 #include <ctime>
 #include <chrono>
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ssl/stream.hpp>
 
 namespace ai_backend::services::ai {
 
 using json = nlohmann::json;
 using namespace core::async;
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+namespace net = boost::asio;
+namespace ssl = boost::asio::ssl;
+using tcp = boost::asio::ip::tcp;
 
 XunfeiModel::XunfeiModel() 
     : last_prompt_tokens_(0), 
@@ -67,7 +77,7 @@ XunfeiModel::GenerateResponse(const std::vector<models::Message>& messages,
         std::string auth_url = GenerateAuthUrl();
         json request_body = BuildRequestBody(messages, config);
         
-        // 发送WebSocket请求
+        // 创建WebSocket客户端
         WebSocketClient ws_client;
         auto connect_result = co_await ws_client.Connect(auth_url);
         
@@ -166,7 +176,7 @@ XunfeiModel::GenerateStreamingResponse(const std::vector<models::Message>& messa
         std::string auth_url = GenerateAuthUrl();
         json request_body = BuildRequestBody(messages, config);
         
-        // 发送WebSocket请求
+        // 创建WebSocket客户端
         WebSocketClient ws_client;
         auto connect_result = co_await ws_client.Connect(auth_url);
         
@@ -385,81 +395,149 @@ json XunfeiModel::BuildRequestBody(const std::vector<models::Message>& messages,
     return request_body;
 }
 
-// WebSocketClient Implementation
-XunfeiModel::WebSocketClient::WebSocketClient() : is_connected_(false) {}
-
-XunfeiModel::WebSocketClient::~WebSocketClient() {
-    Close();
-}
-
-Task<bool> XunfeiModel::WebSocketClient::Connect(const std::string& url) {
-    try {
-        // Note: In a real implementation, this would establish a WebSocket connection
-        // using Boost.Beast or another WebSocket library. This is a simplified version.
-        spdlog::info("Connecting to WebSocket: {}", url);
-        is_connected_ = true;
-        co_return true;
-    } catch (const std::exception& e) {
-        spdlog::error("Error connecting to WebSocket: {}", e.what());
-        co_return false;
-    }
-}
-
-Task<bool> XunfeiModel::WebSocketClient::Send(const std::string& message) {
-    if (!is_connected_) {
-        co_return false;
+// 真正的WebSocket客户端实现
+class XunfeiModel::WebSocketClient {
+public:
+    WebSocketClient() : is_connected_(false), io_context_(), resolver_(io_context_) {}
+    
+    ~WebSocketClient() {
+        Close();
     }
     
-    try {
-        // In a real implementation, this would send the message over the WebSocket connection
-        spdlog::debug("Sending WebSocket message: {}", message);
-        co_return true;
-    } catch (const std::exception& e) {
-        spdlog::error("Error sending WebSocket message: {}", e.what());
-        co_return false;
-    }
-}
-
-Task<std::string> XunfeiModel::WebSocketClient::Receive() {
-    if (!is_connected_) {
-        co_return "";
-    }
-    
-    try {
-        // In a real implementation, this would wait for and receive a message from the WebSocket
-        // Here we simulate receiving mock data for demonstration purposes
-        json mock_response = {
-            {"header", {
-                {"code", 0},
-                {"message", "success"},
-                {"status", 2}
-            }},
-            {"payload", {
-                {"choices", {
-                    {{"text", {{"content", "This is a mock response from Xunfei API."}}}}}
-                }},
-                {"usage", {
-                    {"text", {
-                        {"prompt_tokens", 10},
-                        {"completion_tokens", 8}
-                    }}
-                }}
+    Task<bool> Connect(const std::string& url) {
+        try {
+            // 解析URL
+            std::string protocol, host, path;
+            size_t pos = url.find("://");
+            if (pos != std::string::npos) {
+                protocol = url.substr(0, pos);
+                pos += 3;
+                size_t path_pos = url.find("/", pos);
+                if (path_pos != std::string::npos) {
+                    host = url.substr(pos, path_pos - pos);
+                    path = url.substr(path_pos);
+                } else {
+                    host = url.substr(pos);
+                    path = "/";
+                }
+            } else {
+                co_return false;
             }
-        };
-        
-        co_return mock_response.dump();
-    } catch (const std::exception& e) {
-        spdlog::error("Error receiving WebSocket message: {}", e.what());
-        co_return "";
+            
+            // 解析查询参数
+            size_t query_pos = path.find("?");
+            std::string query;
+            if (query_pos != std::string::npos) {
+                query = path.substr(query_pos);
+                path = path.substr(0, query_pos);
+            }
+            
+            // 连接WebSocket
+            auto const results = resolver_.resolve(host, protocol == "wss" ? "443" : "80");
+            
+            // 创建SSL上下文（如果是wss）
+            if (protocol == "wss") {
+                ssl_context_ = std::make_unique<ssl::context>(ssl::context::tlsv12_client);
+                ssl_context_->set_default_verify_paths();
+                ssl_stream_ = std::make_unique<ssl::stream<tcp::socket>>(io_context_, *ssl_context_);
+                
+                // 连接
+                net::connect(ssl_stream_->next_layer(), results.begin(), results.end());
+                ssl_stream_->handshake(ssl::stream_base::client);
+                
+                // 创建WebSocket
+                ws_ = std::make_unique<websocket::stream<ssl::stream<tcp::socket>&>>(*ssl_stream_);
+            } else {
+                // 创建普通TCP连接
+                tcp_socket_ = std::make_unique<tcp::socket>(io_context_);
+                net::connect(*tcp_socket_, results.begin(), results.end());
+                
+                // 创建WebSocket
+                ws_ = std::make_unique<websocket::stream<tcp::socket&>>(*tcp_socket_);
+            }
+            
+            // 设置WebSocket选项
+            ws_->set_option(websocket::stream_base::timeout::suggested(
+                beast::role_type::client));
+            
+            // 设置主机
+            ws_->set_option(websocket::stream_base::decorator(
+                [host](websocket::request_type& req) {
+                    req.set(http::field::host, host);
+                    req.set(http::field::user_agent, "boost-websocket-client");
+                }));
+            
+            // 握手
+            ws_->handshake(host, path + query);
+            is_connected_ = true;
+            
+            co_return true;
+        } catch (const std::exception& e) {
+            spdlog::error("WebSocket connection error: {}", e.what());
+            co_return false;
+        }
     }
-}
-
-void XunfeiModel::WebSocketClient::Close() {
-    if (is_connected_) {
-        // In a real implementation, this would close the WebSocket connection
-        spdlog::debug("Closing WebSocket connection");
-        is_connected_ = false;
+    
+    Task<bool> Send(const std::string& message) {
+        try {
+            if (!is_connected_) {
+                co_return false;
+            }
+            
+            // 发送消息
+            ws_->write(net::buffer(message));
+            co_return true;
+        } catch (const std::exception& e) {
+            spdlog::error("WebSocket send error: {}", e.what());
+            co_return false;
+        }
     }
-}
+    
+    Task<std::string> Receive() {
+        try {
+            if (!is_connected_) {
+                co_return "";
+            }
+            
+            // 接收消息
+            beast::flat_buffer buffer;
+            ws_->read(buffer);
+            
+            co_return beast::buffers_to_string(buffer.data());
+        } catch (const std::exception& e) {
+            spdlog::error("WebSocket receive error: {}", e.what());
+            co_return "";
+        }
+    }
+    
+    void Close() {
+        try {
+            if (is_connected_) {
+                // 关闭WebSocket连接
+                ws_->close(websocket::close_code::normal);
+                is_connected_ = false;
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("WebSocket close error: {}", e.what());
+        }
+    }
+    
+private:
+    bool is_connected_;
+    net::io_context io_context_;
+    tcp::resolver resolver_;
+    
+    // 对于普通WebSocket
+    std::unique_ptr<tcp::socket> tcp_socket_;
+    std::unique_ptr<websocket::stream<tcp::socket&>> ws_plain_;
+    
+    // 对于WSS
+    std::unique_ptr<ssl::context> ssl_context_;
+    std::unique_ptr<ssl::stream<tcp::socket>> ssl_stream_;
+    std::unique_ptr<websocket::stream<ssl::stream<tcp::socket>&>> ws_ssl_;
+    
+    // 统一访问接口
+    websocket::stream_base* ws_ = nullptr;
+};
 
 } // namespace ai_backend::services::ai

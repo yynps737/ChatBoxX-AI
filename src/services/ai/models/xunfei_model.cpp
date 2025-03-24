@@ -385,7 +385,7 @@ json XunfeiModel::BuildRequestBody(const std::vector<models::Message>& messages,
     return request_body;
 }
 
-// 简单WebSocket客户端
+// WebSocketClient Implementation
 XunfeiModel::WebSocketClient::WebSocketClient() : is_connected_(false) {}
 
 XunfeiModel::WebSocketClient::~WebSocketClient() {
@@ -394,9 +394,9 @@ XunfeiModel::WebSocketClient::~WebSocketClient() {
 
 Task<bool> XunfeiModel::WebSocketClient::Connect(const std::string& url) {
     try {
-        // 此处省略实际WebSocket连接实现
-        // 在实际项目中，应使用如Boost.Beast等库实现WebSocket客户端
-        // 此处仅提供框架代码
+        // Note: In a real implementation, this would establish a WebSocket connection
+        // using Boost.Beast or another WebSocket library. This is a simplified version.
+        spdlog::info("Connecting to WebSocket: {}", url);
         is_connected_ = true;
         co_return true;
     } catch (const std::exception& e) {
@@ -411,7 +411,8 @@ Task<bool> XunfeiModel::WebSocketClient::Send(const std::string& message) {
     }
     
     try {
-        // 发送消息
+        // In a real implementation, this would send the message over the WebSocket connection
+        spdlog::debug("Sending WebSocket message: {}", message);
         co_return true;
     } catch (const std::exception& e) {
         spdlog::error("Error sending WebSocket message: {}", e.what());
@@ -425,8 +426,28 @@ Task<std::string> XunfeiModel::WebSocketClient::Receive() {
     }
     
     try {
-        // 接收消息
-        co_return ""; // 返回接收到的消息
+        // In a real implementation, this would wait for and receive a message from the WebSocket
+        // Here we simulate receiving mock data for demonstration purposes
+        json mock_response = {
+            {"header", {
+                {"code", 0},
+                {"message", "success"},
+                {"status", 2}
+            }},
+            {"payload", {
+                {"choices", {
+                    {{"text", {{"content", "This is a mock response from Xunfei API."}}}}}
+                }},
+                {"usage", {
+                    {"text", {
+                        {"prompt_tokens", 10},
+                        {"completion_tokens", 8}
+                    }}
+                }}
+            }
+        };
+        
+        co_return mock_response.dump();
     } catch (const std::exception& e) {
         spdlog::error("Error receiving WebSocket message: {}", e.what());
         co_return "";
@@ -435,12 +456,9 @@ Task<std::string> XunfeiModel::WebSocketClient::Receive() {
 
 void XunfeiModel::WebSocketClient::Close() {
     if (is_connected_) {
-        try {
-            // 关闭连接
-            is_connected_ = false;
-        } catch (const std::exception& e) {
-            spdlog::error("Error closing WebSocket connection: {}", e.what());
-        }
+        // In a real implementation, this would close the WebSocket connection
+        spdlog::debug("Closing WebSocket connection");
+        is_connected_ = false;
     }
 }
 

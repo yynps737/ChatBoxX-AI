@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ai_service
+      POSTGRES_PASSWORD: your_secure_password
+      POSTGRES_DB: ai_backend
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_service -d ai_backend"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai_backend:
+    build: 
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../config:/app/config
+      - uploads_data:/app/uploads
+    environment:
+      - DB_CONNECTION_STRING=postgresql://ai_service:your_secure_password@postgres/ai_backend
+      - JWT_SECRET=your_jwt_secret_key
+      - WENXIN_API_KEY=your_wenxin_api_key
+      - WENXIN_API_SECRET=your_wenxin_secret_key
+      - XUNFEI_APP_ID=your_xunfei_app_id
+      - XUNFEI_API_KEY=your_xunfei_api_key
+      - XUNFEI_API_SECRET=your_xunfei_api_secret
+      - TONGYI_API_KEY=your_tongyi_api_key
+      - DEEPSEEK_API_KEY=your_deepseek_api_key
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../config/nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+      - uploads_data:/var/www/ai_backend/uploads
+    depends_on:
+      - ai_backend
+
+volumes:
+  postgres_data:
+  uploads_data:

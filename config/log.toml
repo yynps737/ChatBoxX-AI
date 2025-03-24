@@ -1,0 +1,39 @@
+# 日志配置文件
+
+# 全局日志设置
+[global]
+level = "info"
+file = "logs/ai_backend.log"
+max_size = 10485760  # 10MB
+max_files = 10
+format = "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%t] %v"
+
+# 请求日志
+[request]
+level = "info"
+file = "logs/requests.log"
+max_size = 10485760  # 10MB
+max_files = 10
+log_body = false
+log_headers = false
+
+# 数据库日志
+[database]
+level = "info"
+file = "logs/database.log"
+max_size = 10485760  # 10MB
+max_files = 10
+
+# API调用日志
+[api]
+level = "info"
+file = "logs/api.log"
+max_size = 10485760  # 10MB
+max_files = 10
+
+# 错误日志
+[error]
+level = "error"
+file = "logs/error.log"
+max_size = 10485760  # 10MB
+max_files = 10

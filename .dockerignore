@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+.idea
+build/
+bin/
+obj/
+lib/
+out/
+cmake-build-*/
+.DS_Store
+Thumbs.db

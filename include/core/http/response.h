@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
+#include "core/async/task.h"
 
 namespace ai_backend::core::http {
 

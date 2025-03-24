@@ -3,6 +3,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <type_traits>
 
 namespace ai_backend::common {
 
@@ -12,22 +13,22 @@ class Result {
 public:
     // 创建成功结果
     static Result<T> Ok(T value) {
-        return Result<T>(std::move(value));
+        return Result<T>(std::move(value), false);
     }
     
     // 创建失败结果
     static Result<T> Error(std::string error) {
-        return Result<T>(std::move(error));
+        return Result<T>(std::move(error), true);
     }
     
     // 检查结果是否成功
     bool IsOk() const {
-        return result_.index() == 0;
+        return !is_error_;
     }
     
     // 检查结果是否失败
     bool IsError() const {
-        return result_.index() == 1;
+        return is_error_;
     }
     
     // 获取结果值（如果成功）
@@ -93,10 +94,11 @@ public:
 private:
     // 存储成功值或错误消息
     std::variant<T, std::string> result_;
+    bool is_error_;
     
-    // 私有构造函数
-    explicit Result(T value) : result_(std::move(value)) {}
-    explicit Result(std::string error) : result_(std::move(error)) {}
+    // 私有构造函数，避免歧义
+    Result(T value, bool is_error) : result_(std::move(value)), is_error_(is_error) {}
+    Result(std::string error, bool is_error) : result_(std::move(error)), is_error_(is_error) {}
 };
 
 // Result<void>的特化版本
@@ -157,6 +159,81 @@ private:
     
     explicit Result(bool success) : success_(success), error_("") {}
     explicit Result(std::string error) : success_(false), error_(std::move(error)) {}
+};
+
+// 特化 std::string 版本以避免构造函数歧义
+template <>
+class Result<std::string> {
+public:
+    static Result<std::string> Ok(std::string value) {
+        return Result<std::string>(std::move(value), false);
+    }
+    
+    static Result<std::string> Error(std::string error) {
+        return Result<std::string>(std::move(error), true);
+    }
+    
+    bool IsOk() const { return !is_error_; }
+    bool IsError() const { return is_error_; }
+    
+    const std::string& GetValue() const {
+        if (IsError()) {
+            throw std::runtime_error("Cannot get value from error result: " + value_);
+        }
+        return value_;
+    }
+    
+    std::string& GetValue() {
+        if (IsError()) {
+            throw std::runtime_error("Cannot get value from error result: " + value_);
+        }
+        return value_;
+    }
+    
+    const std::string& GetError() const {
+        if (IsOk()) {
+            throw std::runtime_error("Cannot get error from successful result");
+        }
+        return value_;
+    }
+    
+    std::string ValueOr(std::string default_value) const {
+        if (IsOk()) {
+            return value_;
+        }
+        return default_value;
+    }
+    
+    template <typename Func>
+    Result<std::string>& Then(Func&& func) {
+        if (IsOk()) {
+            func(value_);
+        }
+        return *this;
+    }
+    
+    template <typename Func>
+    Result<std::string>& Catch(Func&& func) {
+        if (IsError()) {
+            func(value_);
+        }
+        return *this;
+    }
+    
+    template <typename U, typename Func>
+    Result<U> Map(Func&& func) const {
+        if (IsOk()) {
+            return Result<U>::Ok(func(value_));
+        } else {
+            return Result<U>::Error(value_);
+        }
+    }
+
+private:
+    std::string value_;
+    bool is_error_;
+    
+    Result(std::string value, bool is_error) : value_(std::move(value)), is_error_(is_error) {}
 };
 
 } // namespace ai_backend::common

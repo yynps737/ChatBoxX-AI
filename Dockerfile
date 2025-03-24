@@ -35,15 +35,10 @@ WORKDIR /app
 # 复制源代码
 COPY . .
 
-# 创建测试目录结构
+# 确保目录存在
 RUN mkdir -p include/third_party/nlohmann && \
-    mkdir -p include/third_party/spdlog
-
-# 修改源代码文件以解决命名空间问题
-RUN find src -name "*.cpp" -exec sed -i 's/Task<Response>/core::async::Task<core::http::Response>/g' {} \; && \
-    find src -name "*.cpp" -exec sed -i 's/Response::/core::http::Response::/g' {} \; && \
-    find src -name "*.cpp" -exec sed -i 's/Request/core::http::Request/g' {} \; && \
-    find include -name "*.h" -exec sed -i 's/spdlog::error(\(.*\), \(.*\))/spdlog::error(fmt::format(\1, \2))/g' {} \;
+    mkdir -p include/third_party/spdlog && \
+    mkdir -p cmake/modules
 
 # 创建构建目录并禁用测试构建
 RUN mkdir -p build && cd build && \

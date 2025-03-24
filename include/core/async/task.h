@@ -18,6 +18,7 @@ public:
 
     struct promise_type {
         std::variant<std::monostate, T, std::exception_ptr> result;
+        std::coroutine_handle<> continuation; // 添加缺少的成员
         
         Task get_return_object() { 
             return Task(handle_type::from_promise(*this)); 
@@ -107,7 +108,7 @@ public:
 
     struct promise_type {
         std::variant<std::monostate, std::exception_ptr> result;
-        std::coroutine_handle<> continuation;
+        std::coroutine_handle<> continuation; // 添加缺少的成员
         
         Task get_return_object() { 
             return Task(handle_type::from_promise(*this)); 
@@ -190,7 +191,7 @@ private:
     handle_type handle_;
 };
 
-// TimeoutTask - 用于支持超时操作
+// 增加超时任务封装
 template <typename T>
 class TimeoutTask {
 public:

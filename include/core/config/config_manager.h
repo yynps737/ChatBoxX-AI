@@ -14,14 +14,14 @@ namespace ai_backend::core::config {
 class ConfigManager {
 public:
     // 配置类型
-    using ConfigValue = std::variant
+    using ConfigValue = std::variant<
         std::string,
         int,
         double,
         bool,
         std::vector<std::string>,
         std::vector<int>,
-        std::vector<double>
+        std::vector<double>>
     >;
     
     // 获取单例实例
@@ -57,8 +57,8 @@ public:
                               const std::vector<int>& default_value = {}) const;
     
     // 获取浮点列表
-    std::vector<double> GetDoubleList(const std::string& key,
-                                    const std::vector<double>& default_value = {}) const;
+    std::vector<double>> GetDoubleList(const std::string& key,
+                                    const std::vector<double>>& default_value = {}) const;
     
     // 检查键是否存在
     bool HasKey(const std::string& key) const;

@@ -1,0 +1,77 @@
+# C++ project .gitignore
+
+# Build directories
+build/
+bin/
+obj/
+lib/
+out/
+cmake-build-*/
+
+# Compiled files
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.cmake
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.vs/
+*.suo
+*.user
+*.userprefs
+*.sln.docstates
+
+# Dependency directories
+deps/
+external/
+vendor/
+_deps/
+
+# Generated files
+*.log
+*.tlog
+*.idb
+*.pdb
+*.ilk
+*.map
+*.exp
+*.lastbuildstate
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+temp/
+tmp/
+.temp/
+
+# Specific to this project
+config/local.toml

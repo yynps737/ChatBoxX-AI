@@ -102,24 +102,69 @@ void ConfigManager::LoadNestedConfig(const std::string& prefix, const toml::valu
 }
 
 void ConfigManager::LoadFromEnvironment() {
-    // 这里只是一个简单的实现，实际项目可能需要更复杂的环境变量解析
-    // 例如，可以遍历所有环境变量，查找特定前缀的变量
-    
-    // 示例：加载数据库配置
-    const char* db_url = std::getenv("DB_CONNECTION_STRING");
-    if (db_url) {
-        Set("database.connection_string", std::string(db_url));
+    // 支持Heroku的PORT环境变量
+    const char* heroku_port = std::getenv("PORT");
+    if (heroku_port) {
+        try {
+            int port_num = std::stoi(heroku_port);
+            Set("server.port", port_num);
+        } catch (const std::exception& e) {
+            spdlog::error("Invalid Heroku PORT value: {}", e.what());
+        }
+    } else {
+        // 回退到自定义环境变量
+        const char* port = std::getenv("SERVER_PORT");
+        if (port) {
+            try {
+                int port_num = std::stoi(port);
+                Set("server.port", port_num);
+            } catch (const std::exception& e) {
+                spdlog::error("Invalid server port in environment variable: {}", e.what());
+            }
+        }
     }
     
-    // 示例：加载模型API密钥
+    // 支持Heroku的DATABASE_URL环境变量
+    const char* database_url = std::getenv("DATABASE_URL");
+    if (database_url) {
+        // Heroku格式转换为PostgreSQL连接字符串
+        std::string db_url = std::string(database_url);
+        if (db_url.substr(0, 8) == "postgres:") {
+            db_url = "postgresql" + db_url.substr(8);
+        }
+        Set("database.connection_string", db_url);
+    } else {
+        // 回退到自定义环境变量
+        const char* db_url = std::getenv("DB_CONNECTION_STRING");
+        if (db_url) {
+            Set("database.connection_string", std::string(db_url));
+        }
+    }
+    
+    // 加载AI模型API密钥
     const char* wenxin_api_key = std::getenv("WENXIN_API_KEY");
     if (wenxin_api_key) {
         Set("ai.wenxin.api_key", std::string(wenxin_api_key));
     }
     
+    const char* wenxin_api_secret = std::getenv("WENXIN_API_SECRET");
+    if (wenxin_api_secret) {
+        Set("ai.wenxin.api_secret", std::string(wenxin_api_secret));
+    }
+    
     const char* xunfei_api_key = std::getenv("XUNFEI_API_KEY");
     if (xunfei_api_key) {
         Set("ai.xunfei.api_key", std::string(xunfei_api_key));
+    }
+    
+    const char* xunfei_app_id = std::getenv("XUNFEI_APP_ID");
+    if (xunfei_app_id) {
+        Set("ai.xunfei.app_id", std::string(xunfei_app_id));
+    }
+    
+    const char* xunfei_api_secret = std::getenv("XUNFEI_API_SECRET");
+    if (xunfei_api_secret) {
+        Set("ai.xunfei.api_secret", std::string(xunfei_api_secret));
     }
     
     const char* tongyi_api_key = std::getenv("TONGYI_API_KEY");
@@ -132,15 +177,10 @@ void ConfigManager::LoadFromEnvironment() {
         Set("ai.deepseek.api_key", std::string(deepseek_api_key));
     }
     
-    // 示例：加载服务器端口
-    const char* port = std::getenv("SERVER_PORT");
-    if (port) {
-        try {
-            int port_num = std::stoi(port);
-            Set("server.port", port_num);
-        } catch (const std::exception& e) {
-            spdlog::error("Invalid server port in environment variable: {}", e.what());
-        }
+    // JWT密钥
+    const char* jwt_secret = std::getenv("JWT_SECRET");
+    if (jwt_secret) {
+        Set("auth.jwt_secret", std::string(jwt_secret));
     }
 }
 

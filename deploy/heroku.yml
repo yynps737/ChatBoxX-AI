@@ -1,6 +1,0 @@
-build:
-  docker:
-    web: deploy/Dockerfile
-
-run:
-  web: /app/ai_backend /app/config/config.toml

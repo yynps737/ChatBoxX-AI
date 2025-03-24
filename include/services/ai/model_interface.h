@@ -49,13 +49,13 @@ public:
     // 非流式生成回复
     virtual core::async::Task<common::Result<std::string>> 
     GenerateResponse(const std::vector<models::Message>& messages, 
-                    const ModelConfig& config = {}) = 0;
+                    const ModelConfigconst ModelConfig& config = {} config = ModelConfig()) = 0;
     
     // 流式生成回复
     virtual core::async::Task<common::Result<void>> 
     GenerateStreamingResponse(const std::vector<models::Message>& messages,
                              StreamCallback callback,
-                             const ModelConfig& config = {}) = 0;
+                             const ModelConfigconst ModelConfig& config = {} config = ModelConfig()) = 0;
     
     // 获取最后请求的Token数量
     virtual size_t GetLastPromptTokens() const = 0;

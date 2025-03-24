@@ -36,21 +36,24 @@ Task<Response> ModelController::GetModels(const Request& request) {
         }
         
         // 返回成功响应
-        co_return Response::OK({
+        json response_json = {
             {"code", 0},
             {"message", "获取成功"},
             {"data", {
                 {"models", models_json}
             }}
-        });
+        };
+        
+        co_return Response::OK(response_json);
         
     } catch (const std::exception& e) {
         spdlog::error("Error in GetModels: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 
@@ -63,11 +66,12 @@ Task<Response> ModelController::GetModelById(const Request& request) {
         auto result = model_service_.GetModelInfo(model_id);
         
         if (result.IsError()) {
-            co_return Response::NotFound({
+            json error_json = {
                 {"code", 404},
                 {"message", "模型不存在"},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::NotFound(error_json);
         }
         
         const auto& model = result.GetValue();
@@ -79,7 +83,7 @@ Task<Response> ModelController::GetModelById(const Request& request) {
         }
         
         // 返回成功响应
-        co_return Response::OK({
+        json response_json = {
             {"code", 0},
             {"message", "获取成功"},
             {"data", {
@@ -89,15 +93,18 @@ Task<Response> ModelController::GetModelById(const Request& request) {
                 {"capabilities", capabilities_json},
                 {"supports_streaming", model.supports_streaming}
             }}
-        });
+        };
+        
+        co_return Response::OK(response_json);
         
     } catch (const std::exception& e) {
         spdlog::error("Error in GetModelById: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 

@@ -22,11 +22,12 @@ Task<Response> MessageController::GetMessages(const Request& request) {
         
         auto validation = co_await ValidateDialogAccess(request, dialog_id);
         if (validation.IsError()) {
-            co_return Response::Forbidden({
+            json error_json = {
                 {"code", 403},
                 {"message", validation.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::Forbidden(error_json);
         }
         
         int page = std::stoi(request.GetQueryParam("page", "1"));
@@ -35,11 +36,12 @@ Task<Response> MessageController::GetMessages(const Request& request) {
         auto result = co_await message_service_->GetMessagesByDialogId(dialog_id, page, page_size);
         
         if (result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
         json messages_json = json::array();
@@ -70,7 +72,7 @@ Task<Response> MessageController::GetMessages(const Request& request) {
             messages_json.push_back(message_json);
         }
         
-        co_return Response::OK({
+        json response_json = {
             {"code", 0},
             {"message", "获取成功"},
             {"data", {
@@ -79,15 +81,18 @@ Task<Response> MessageController::GetMessages(const Request& request) {
                 {"page", page},
                 {"page_size", page_size}
             }}
-        });
+        };
+        
+        co_return Response::OK(response_json);
         
     } catch (const std::exception& e) {
         spdlog::error("Error in GetMessages: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 
@@ -97,21 +102,23 @@ Task<Response> MessageController::CreateMessage(const Request& request) {
         
         auto validation = co_await ValidateDialogAccess(request, dialog_id);
         if (validation.IsError()) {
-            co_return Response::Forbidden({
+            json error_json = {
                 {"code", 403},
                 {"message", validation.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::Forbidden(error_json);
         }
         
         json request_body = json::parse(request.body);
         
         if (!request_body.contains("content") || !request_body["content"].is_string()) {
-            co_return Response::BadRequest({
+            json error_json = {
                 {"code", 400},
                 {"message", "消息内容不能为空"},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::BadRequest(error_json);
         }
         
         models::Message message;
@@ -146,11 +153,12 @@ Task<Response> MessageController::CreateMessage(const Request& request) {
         auto result = co_await message_service_->CreateMessage(message);
         
         if (result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
         const auto& created_message = result.GetValue();
@@ -177,29 +185,28 @@ Task<Response> MessageController::CreateMessage(const Request& request) {
             message_json["attachments"] = attachments_json;
         }
         
-        co_return Response::Created({
-            {"code", 0},
-            {"message", "创建成功"},
-            {"data", message_json}
-        });
+        co_return Response::Created(message_json);
         
     } catch (const json::exception& e) {
         spdlog::error("JSON error in CreateMessage: {}", e.what());
-        co_return Response::BadRequest({
+        json error_json = {
             {"code", 400},
             {"message", "请求格式错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::BadRequest(error_json);
     } catch (const std::exception& e) {
         spdlog::error("Error in CreateMessage: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 
+// 添加缺失的方法声明
 Task<std::vector<models::Message>> MessageController::BuildMessageContext(
     const std::string& dialog_id,
     const std::string& message_id) {
@@ -273,22 +280,24 @@ Task<Response> MessageController::GetReply(const Request& request) {
         std::string dialog_id = request.GetPathParam("dialog_id");
         std::string message_id = request.GetPathParam("message_id");
         
-        auto validation = ValidateDialogAccess(request, dialog_id);
+        auto validation = co_await ValidateDialogAccess(request, dialog_id);
         if (validation.IsError()) {
-            co_return Response::Forbidden({
+            json error_json = {
                 {"code", 403},
                 {"message", validation.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::Forbidden(error_json);
         }
         
         auto dialog_result = co_await dialog_service_->GetDialogById(dialog_id);
         if (dialog_result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", dialog_result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
         auto context = co_await BuildMessageContext(dialog_id, message_id);
@@ -301,11 +310,12 @@ Task<Response> MessageController::GetReply(const Request& request) {
         );
         
         if (response_result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", response_result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
         models::Message ai_message;
@@ -317,11 +327,12 @@ Task<Response> MessageController::GetReply(const Request& request) {
         auto save_result = co_await message_service_->CreateMessage(ai_message);
         
         if (save_result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", save_result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
         const auto& created_ai_message = save_result.GetValue();
@@ -336,19 +347,22 @@ Task<Response> MessageController::GetReply(const Request& request) {
             {"tokens", created_ai_message.tokens}
         };
         
-        co_return Response::OK({
+        json response_json = {
             {"code", 0},
             {"message", "回复成功"},
             {"data", message_json}
-        });
+        };
+        
+        co_return Response::OK(response_json);
         
     } catch (const std::exception& e) {
         spdlog::error("Error in GetReply: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 
@@ -357,22 +371,24 @@ Task<Response> MessageController::GetStreamReply(const Request& request) {
         std::string dialog_id = request.GetPathParam("dialog_id");
         std::string message_id = request.GetPathParam("message_id");
         
-        auto validation = ValidateDialogAccess(request, dialog_id);
+        auto validation = co_await ValidateDialogAccess(request, dialog_id);
         if (validation.IsError()) {
-            co_return Response::Forbidden({
+            json error_json = {
                 {"code", 403},
                 {"message", validation.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::Forbidden(error_json);
         }
         
         auto dialog_result = co_await dialog_service_->GetDialogById(dialog_id);
         if (dialog_result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", dialog_result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
         auto context = co_await BuildMessageContext(dialog_id, message_id);
@@ -389,12 +405,12 @@ Task<Response> MessageController::GetStreamReply(const Request& request) {
         std::string generated_message_id;
         
         response.stream_handler = [this, 
-                                  dialog_id, 
                                   &generated_content, 
                                   &generated_message_id,
-                                  model_id = dialog_result.GetValue().model_id,
-                                  context, 
-                                  model_config](StreamWriter& writer) -> Task<void> {
+                                  dialog_id,
+                                  context,
+                                  model_config,
+                                  model_id = dialog_result.GetValue().model_id](StreamWriter& writer) -> Task<void> {
             try {
                 co_await model_service_.GenerateStreamingResponse(
                     model_id,
@@ -410,8 +426,8 @@ Task<Response> MessageController::GetStreamReply(const Request& request) {
                                 
                                 auto save_result = message_service_->CreateMessage(ai_message);
                                 
-                                if (save_result.is_ready()) {
-                                    auto result = save_result.get();
+                                if (co_await save_result.await_ready()) {
+                                    auto result = co_await save_result;
                                     if (result.IsOk()) {
                                         generated_message_id = result.GetValue().id;
                                     }
@@ -454,11 +470,12 @@ Task<Response> MessageController::GetStreamReply(const Request& request) {
         
     } catch (const std::exception& e) {
         spdlog::error("Error in GetStreamReply: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 
@@ -469,36 +486,41 @@ Task<Response> MessageController::DeleteMessage(const Request& request) {
         
         auto validation = co_await ValidateDialogAccess(request, dialog_id);
         if (validation.IsError()) {
-            co_return Response::Forbidden({
+            json error_json = {
                 {"code", 403},
                 {"message", validation.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::Forbidden(error_json);
         }
         
         auto result = co_await message_service_->DeleteMessage(message_id);
         
         if (result.IsError()) {
-            co_return Response::InternalServerError({
+            json error_json = {
                 {"code", 500},
                 {"message", result.GetError()},
                 {"data", nullptr}
-            });
+            };
+            co_return Response::InternalServerError(error_json);
         }
         
-        co_return Response::OK({
+        json response_json = {
             {"code", 0},
             {"message", "删除成功"},
             {"data", nullptr}
-        });
+        };
+        
+        co_return Response::OK(response_json);
         
     } catch (const std::exception& e) {
         spdlog::error("Error in DeleteMessage: {}", e.what());
-        co_return Response::InternalServerError({
+        json error_json = {
             {"code", 500},
             {"message", "服务器内部错误"},
             {"data", nullptr}
-        });
+        };
+        co_return Response::InternalServerError(error_json);
     }
 }
 
@@ -510,13 +532,9 @@ common::Result<std::string> MessageController::ValidateDialogAccess(
         return common::Result<std::string>::Error("未授权访问");
     }
     
-    auto result = dialog_service_->ValidateDialogOwnership(dialog_id, request.user_id.value());
+    auto result = co_await dialog_service_->ValidateDialogOwnership(dialog_id, request.user_id.value());
     
-    if (result.is_ready()) {
-        return result.get();
-    } else {
-        return common::Result<std::string>::Error("验证对话访问权限失败");
-    }
+    co_return result;
 }
 
 void MessageController::HandleStreamingResponse(
@@ -531,9 +549,30 @@ void MessageController::HandleStreamingResponse(
     }
     
     std::string escaped_content = content;
-    json::escape_string(escaped_content);
+    // 使用适当的转义方法，不使用json::escape_string
+    std::string escaped = "";
+    for (char c : content) {
+        if (c == '"' || c == '\\' || ('\x00' <= c && c <= '\x1f')) {
+            escaped += '\\';
+            switch(c) {
+                case '"': escaped += '"'; break;
+                case '\\': escaped += '\\'; break;
+                case '\b': escaped += 'b'; break;
+                case '\f': escaped += 'f'; break;
+                case '\n': escaped += 'n'; break;
+                case '\r': escaped += 'r'; break;
+                case '\t': escaped += 't'; break;
+                default:
+                    char buf[8];
+                    snprintf(buf, sizeof buf, "u%04x", c);
+                    escaped += buf;
+            }
+        } else {
+            escaped += c;
+        }
+    }
     
-    std::string data = "data: {\"delta\":\"" + escaped_content + "\"}\n\n";
+    std::string data = "data: {\"delta\":\"" + escaped + "\"}\n\n";
     writer.Write(data);
 }
 

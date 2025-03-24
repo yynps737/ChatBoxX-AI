@@ -1,4 +1,5 @@
 #include "api/controllers/auth_controller.h"
+#include "api/validators/auth_validator.h"
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -6,7 +7,6 @@ namespace ai_backend::api::controllers {
 
 using json = nlohmann::json;
 using namespace core::async;
-using namespace core::http;
 
 AuthController::AuthController(std::shared_ptr<services::auth::AuthService> auth_service)
     : auth_service_(std::move(auth_service)) {
@@ -14,10 +14,8 @@ AuthController::AuthController(std::shared_ptr<services::auth::AuthService> auth
 
 Task<Response> AuthController::Register(const Request& request) {
     try {
-        // 解析请求体JSON
         json request_body = json::parse(request.body);
         
-        // 验证请求体
         if (!request_body.contains("username") || !request_body["username"].is_string() ||
             !request_body.contains("password") || !request_body["password"].is_string() ||
             !request_body.contains("email") || !request_body["email"].is_string()) {
@@ -32,7 +30,31 @@ Task<Response> AuthController::Register(const Request& request) {
         std::string password = request_body["password"].get<std::string>();
         std::string email = request_body["email"].get<std::string>();
         
-        // 调用认证服务进行注册
+        std::string error_message;
+        if (!validators::AuthValidator::ValidateUsername(username, error_message)) {
+            co_return Response::BadRequest({
+                {"code", 400},
+                {"message", error_message},
+                {"data", nullptr}
+            });
+        }
+        
+        if (!validators::AuthValidator::ValidatePassword(password, error_message)) {
+            co_return Response::BadRequest({
+                {"code", 400},
+                {"message", error_message},
+                {"data", nullptr}
+            });
+        }
+        
+        if (!validators::AuthValidator::ValidateEmail(email, error_message)) {
+            co_return Response::BadRequest({
+                {"code", 400},
+                {"message", error_message},
+                {"data", nullptr}
+            });
+        }
+        
         auto result = co_await auth_service_->Register(username, password, email);
         
         if (result.IsError()) {
@@ -43,7 +65,6 @@ Task<Response> AuthController::Register(const Request& request) {
             });
         }
         
-        // 生成JWT令牌
         auto token_result = co_await auth_service_->GenerateToken(result.GetValue());
         
         if (token_result.IsError()) {
@@ -54,7 +75,6 @@ Task<Response> AuthController::Register(const Request& request) {
             });
         }
         
-        // 返回成功响应
         co_return Response::Created({
             {"code", 0},
             {"message", "注册成功"},
@@ -84,10 +104,8 @@ Task<Response> AuthController::Register(const Request& request) {
 
 Task<Response> AuthController::Login(const Request& request) {
     try {
-        // 解析请求体JSON
         json request_body = json::parse(request.body);
         
-        // 验证请求体
         if (!request_body.contains("username") || !request_body["username"].is_string() ||
             !request_body.contains("password") || !request_body["password"].is_string()) {
             co_return Response::BadRequest({
@@ -100,7 +118,15 @@ Task<Response> AuthController::Login(const Request& request) {
         std::string username = request_body["username"].get<std::string>();
         std::string password = request_body["password"].get<std::string>();
         
-        // 调用认证服务进行登录
+        std::string error_message;
+        if (!validators::AuthValidator::ValidateLoginRequest(request_body, error_message)) {
+            co_return Response::BadRequest({
+                {"code", 400},
+                {"message", error_message},
+                {"data", nullptr}
+            });
+        }
+        
         auto result = co_await auth_service_->Login(username, password);
         
         if (result.IsError()) {
@@ -111,7 +137,6 @@ Task<Response> AuthController::Login(const Request& request) {
             });
         }
         
-        // 返回成功响应
         auto [access_token, refresh_token] = result.GetValue();
         
         co_return Response::OK({
@@ -120,7 +145,7 @@ Task<Response> AuthController::Login(const Request& request) {
             {"data", {
                 {"access_token", access_token},
                 {"refresh_token", refresh_token},
-                {"expires_in", 3600} // 令牌过期时间(秒)
+                {"expires_in", 3600}
             }}
         });
         
@@ -143,10 +168,8 @@ Task<Response> AuthController::Login(const Request& request) {
 
 Task<Response> AuthController::RefreshToken(const Request& request) {
     try {
-        // 解析请求体JSON
         json request_body = json::parse(request.body);
         
-        // 验证请求体
         if (!request_body.contains("refresh_token") || !request_body["refresh_token"].is_string()) {
             co_return Response::BadRequest({
                 {"code", 400},
@@ -157,7 +180,15 @@ Task<Response> AuthController::RefreshToken(const Request& request) {
         
         std::string refresh_token = request_body["refresh_token"].get<std::string>();
         
-        // 调用认证服务刷新令牌
+        std::string error_message;
+        if (!validators::AuthValidator::ValidateToken(refresh_token, error_message)) {
+            co_return Response::BadRequest({
+                {"code", 400},
+                {"message", error_message},
+                {"data", nullptr}
+            });
+        }
+        
         auto result = co_await auth_service_->RefreshToken(refresh_token);
         
         if (result.IsError()) {
@@ -168,13 +199,12 @@ Task<Response> AuthController::RefreshToken(const Request& request) {
             });
         }
         
-        // 返回成功响应
         co_return Response::OK({
             {"code", 0},
             {"message", "刷新成功"},
             {"data", {
                 {"access_token", result.GetValue()},
-                {"expires_in", 3600} // 令牌过期时间(秒)
+                {"expires_in", 3600}
             }}
         });
         

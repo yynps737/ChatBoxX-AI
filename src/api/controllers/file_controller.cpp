@@ -178,7 +178,7 @@ Task<Response> FileController::GetFile(const Request& request) {
             // 构建文件下载响应
             Response response;
             response.status_code = 200;
-            response.body = content_result.GetValue();
+            response.body = std::string(content_result.GetValue().begin(), content_result.GetValue().end());
             response.headers["Content-Type"] = file.type;
             response.headers["Content-Disposition"] = "attachment; filename=\"" + file.name + "\"";
             response.headers["Content-Length"] = std::to_string(file.size);

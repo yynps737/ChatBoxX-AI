@@ -61,7 +61,67 @@ std::string AuthService::HashPassword(const std::string& password, const std::st
     return ss.str();
 }
 
-// 其他方法实现...
-// 为了简化，我们只需要实现测试用到的 HashPassword 方法
+Task<common::Result<std::string>> AuthService::ValidateToken(const std::string& token) {
+    // 验证Token有效性
+    if (!core::utils::JwtHelper::VerifyToken(token, jwt_secret_)) {
+        co_return common::Result<std::string>::Error("无效的令牌或令牌已过期");
+    }
+    
+    // 解析Token获取用户ID
+    auto payload = core::utils::JwtHelper::GetTokenPayload(token);
+    if (!payload.contains("sub")) {
+        co_return common::Result<std::string>::Error("令牌缺少用户ID");
+    }
+    
+    co_return common::Result<std::string>::Ok(payload["sub"].get<std::string>());
+}
+
+Task<common::Result<std::string>> AuthService::GenerateToken(const std::string& user_id) {
+    // 创建Token
+    nlohmann::json payload;
+    payload["sub"] = user_id;
+    payload["iss"] = jwt_issuer_;
+    
+    std::string token = core::utils::JwtHelper::CreateToken(
+        payload, jwt_secret_, access_token_lifetime_);
+    
+    if (token.empty()) {
+        co_return common::Result<std::string>::Error("生成令牌失败");
+    }
+    
+    co_return common::Result<std::string>::Ok(token);
+}
+
+Task<common::Result<std::string>> AuthService::RefreshToken(const std::string& refresh_token) {
+    // 简易实现：验证刷新令牌并生成新的访问令牌
+    auto result = co_await ValidateToken(refresh_token);
+    
+    if (result.IsError()) {
+        co_return result;
+    }
+    
+    // 生成新的访问令牌
+    co_return co_await GenerateToken(result.GetValue());
+}
+
+Task<common::Result<std::pair<std::string, std::string>>> 
+AuthService::Login(const std::string& username, const std::string& password) {
+    try {
+        // 简易实现：返回错误，表示未实现
+        co_return common::Result<std::pair<std::string, std::string>>::Error("未实现的方法");
+    } catch (const std::exception& e) {
+        co_return common::Result<std::pair<std::string, std::string>>::Error(e.what());
+    }
+}
+
+Task<common::Result<std::string>> 
+AuthService::Register(const std::string& username, const std::string& password, const std::string& email) {
+    try {
+        // 简易实现：返回错误，表示未实现
+        co_return common::Result<std::string>::Error("未实现的方法");
+    } catch (const std::exception& e) {
+        co_return common::Result<std::string>::Error(e.what());
+    }
+}
 
 } // namespace ai_backend::services::auth

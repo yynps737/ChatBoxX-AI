@@ -199,3 +199,468 @@ std::string FileService::DetectMimeType(const std::vector<uint8_t>& data, const 
     return "";
 }
 }
+Task<common::Result<models::File>> 
+FileService::GetFileById(const std::string& file_id) {
+    try {
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        auto result = txn.exec_params(
+            "SELECT id, user_id, message_id, name, type, size, url, created_at "
+            "FROM files WHERE id = $1",
+            file_id
+        );
+        
+        if (result.empty()) {
+            db_pool.ReleaseConnection(conn);
+            co_return common::Result<models::File>::Error("文件不存在");
+        }
+        
+        models::File file;
+        file.id = result[0][0].as<std::string>();
+        file.user_id = result[0][1].as<std::string>();
+        if (!result[0][2].is_null()) {
+            file.message_id = result[0][2].as<std::string>();
+        }
+        file.name = result[0][3].as<std::string>();
+        file.type = result[0][4].as<std::string>();
+        file.size = result[0][5].as<size_t>();
+        file.url = result[0][6].as<std::string>();
+        file.created_at = result[0][7].as<std::string>();
+        
+        txn.commit();
+        db_pool.ReleaseConnection(conn);
+        
+        co_return common::Result<models::File>::Ok(file);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFileById: {}", e.what());
+        co_return common::Result<models::File>::Error("获取文件失败");
+    }
+}
+
+Task<common::Result<std::vector<models::File>>> 
+FileService::GetFilesByUserId(const std::string& user_id, int page, int page_size) {
+    try {
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        
+        int offset = (page - 1) * page_size;
+        auto result = txn.exec_params(
+            "SELECT id, user_id, message_id, name, type, size, url, created_at "
+            "FROM files WHERE user_id = $1 "
+            "ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+            user_id, page_size, offset
+        );
+        
+        std::vector<models::File> files;
+        for (const auto& row : result) {
+            models::File file;
+            file.id = row[0].as<std::string>();
+            file.user_id = row[1].as<std::string>();
+            if (!row[2].is_null()) {
+                file.message_id = row[2].as<std::string>();
+            }
+            file.name = row[3].as<std::string>();
+            file.type = row[4].as<std::string>();
+            file.size = row[5].as<size_t>();
+            file.url = row[6].as<std::string>();
+            file.created_at = row[7].as<std::string>();
+            
+            files.push_back(file);
+        }
+        
+        txn.commit();
+        db_pool.ReleaseConnection(conn);
+        
+        co_return common::Result<std::vector<models::File>>::Ok(files);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFilesByUserId: {}", e.what());
+        co_return common::Result<std::vector<models::File>>::Error("获取文件列表失败");
+    }
+}
+
+Task<common::Result<std::vector<models::File>>> 
+FileService::GetFilesByMessageId(const std::string& message_id) {
+    try {
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        auto result = txn.exec_params(
+            "SELECT id, user_id, message_id, name, type, size, url, created_at "
+            "FROM files WHERE message_id = $1",
+            message_id
+        );
+        
+        std::vector<models::File> files;
+        for (const auto& row : result) {
+            models::File file;
+            file.id = row[0].as<std::string>();
+            file.user_id = row[1].as<std::string>();
+            file.message_id = row[2].as<std::string>();
+            file.name = row[3].as<std::string>();
+            file.type = row[4].as<std::string>();
+            file.size = row[5].as<size_t>();
+            file.url = row[6].as<std::string>();
+            file.created_at = row[7].as<std::string>();
+            
+            files.push_back(file);
+        }
+        
+        txn.commit();
+        db_pool.ReleaseConnection(conn);
+        
+        co_return common::Result<std::vector<models::File>>::Ok(files);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFilesByMessageId: {}", e.what());
+        co_return common::Result<std::vector<models::File>>::Error("获取文件列表失败");
+    }
+}
+
+Task<common::Result<std::vector<uint8_t>>> 
+FileService::GetFileContent(const std::string& file_id) {
+    try {
+        // 先获取文件信息
+        auto file_result = co_await GetFileById(file_id);
+        if (file_result.IsError()) {
+            co_return common::Result<std::vector<uint8_t>>::Error(file_result.GetError());
+        }
+        
+        const auto& file = file_result.GetValue();
+        
+        // 获取文件路径
+        std::string filename = file.url.substr(file.url.find_last_of('/') + 1);
+        std::string filepath = upload_dir_ + "/" + filename;
+        
+        // 读取文件内容
+        std::ifstream file_stream(filepath, std::ios::binary);
+        if (!file_stream) {
+            co_return common::Result<std::vector<uint8_t>>::Error("无法打开文件");
+        }
+        
+        // 获取文件大小
+        file_stream.seekg(0, std::ios::end);
+        size_t size = file_stream.tellg();
+        file_stream.seekg(0, std::ios::beg);
+        
+        // 读取文件内容到缓冲区
+        std::vector<uint8_t> buffer(size);
+        file_stream.read(reinterpret_cast<char*>(buffer.data()), size);
+        
+        co_return common::Result<std::vector<uint8_t>>::Ok(buffer);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFileContent: {}", e.what());
+        co_return common::Result<std::vector<uint8_t>>::Error("获取文件内容失败");
+    }
+}
+
+Task<common::Result<void>> 
+FileService::DeleteFile(const std::string& file_id) {
+    try {
+        // 先获取文件信息
+        auto file_result = co_await GetFileById(file_id);
+        if (file_result.IsError()) {
+            co_return common::Result<void>::Error(file_result.GetError());
+        }
+        
+        const auto& file = file_result.GetValue();
+        
+        // 获取文件路径
+        std::string filename = file.url.substr(file.url.find_last_of('/') + 1);
+        std::string filepath = upload_dir_ + "/" + filename;
+        
+        // 从数据库中删除文件记录
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        txn.exec_params("DELETE FROM files WHERE id = $1", file_id);
+        txn.commit();
+        
+        db_pool.ReleaseConnection(conn);
+        
+        // 从文件系统中删除文件
+        if (fs::exists(filepath)) {
+            fs::remove(filepath);
+        }
+        
+        co_return common::Result<void>::Ok();
+    } catch (const std::exception& e) {
+        spdlog::error("Error in DeleteFile: {}", e.what());
+        co_return common::Result<void>::Error("删除文件失败");
+    }
+}
+
+Task<common::Result<ParsedFormData>> 
+FileService::ParseMultipartFormData(const core::http::Request& request) {
+    // 简易实现：返回空解析结果
+    ParsedFormData form_data;
+    co_return common::Result<ParsedFormData>::Ok(form_data);
+}
+
+std::string FileService::GetFileExtension(const std::string& filename) {
+    size_t pos = filename.find_last_of('.');
+    if (pos != std::string::npos) {
+        return filename.substr(pos);
+    }
+    return "";
+}
+
+bool FileService::IsAllowedExtension(const std::string& extension) {
+    for (const auto& allowed_ext : allowed_extensions_) {
+        if (core::utils::StringUtils::ToLower(extension) == core::utils::StringUtils::ToLower(allowed_ext)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string FileService::SanitizeFilename(const std::string& filename) {
+    // 移除路径部分，只保留文件名
+    std::string sanitized = filename;
+    size_t pos = sanitized.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        sanitized = sanitized.substr(pos + 1);
+    }
+    
+    // 移除危险字符
+    sanitized = std::regex_replace(sanitized, std::regex("[^a-zA-Z0-9._-]"), "_");
+    
+    return sanitized;
+}
+
+Task<common::Result<models::File>> 
+FileService::GetFileById(const std::string& file_id) {
+    try {
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        auto result = txn.exec_params(
+            "SELECT id, user_id, message_id, name, type, size, url, created_at "
+            "FROM files WHERE id = $1",
+            file_id
+        );
+        
+        if (result.empty()) {
+            db_pool.ReleaseConnection(conn);
+            co_return common::Result<models::File>::Error("文件不存在");
+        }
+        
+        models::File file;
+        file.id = result[0][0].as<std::string>();
+        file.user_id = result[0][1].as<std::string>();
+        if (!result[0][2].is_null()) {
+            file.message_id = result[0][2].as<std::string>();
+        }
+        file.name = result[0][3].as<std::string>();
+        file.type = result[0][4].as<std::string>();
+        file.size = result[0][5].as<size_t>();
+        file.url = result[0][6].as<std::string>();
+        file.created_at = result[0][7].as<std::string>();
+        
+        txn.commit();
+        db_pool.ReleaseConnection(conn);
+        
+        co_return common::Result<models::File>::Ok(file);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFileById: {}", e.what());
+        co_return common::Result<models::File>::Error("获取文件失败");
+    }
+}
+
+Task<common::Result<std::vector<models::File>>> 
+FileService::GetFilesByUserId(const std::string& user_id, int page, int page_size) {
+    try {
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        
+        int offset = (page - 1) * page_size;
+        auto result = txn.exec_params(
+            "SELECT id, user_id, message_id, name, type, size, url, created_at "
+            "FROM files WHERE user_id = $1 "
+            "ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+            user_id, page_size, offset
+        );
+        
+        std::vector<models::File> files;
+        for (const auto& row : result) {
+            models::File file;
+            file.id = row[0].as<std::string>();
+            file.user_id = row[1].as<std::string>();
+            if (!row[2].is_null()) {
+                file.message_id = row[2].as<std::string>();
+            }
+            file.name = row[3].as<std::string>();
+            file.type = row[4].as<std::string>();
+            file.size = row[5].as<size_t>();
+            file.url = row[6].as<std::string>();
+            file.created_at = row[7].as<std::string>();
+            
+            files.push_back(file);
+        }
+        
+        txn.commit();
+        db_pool.ReleaseConnection(conn);
+        
+        co_return common::Result<std::vector<models::File>>::Ok(files);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFilesByUserId: {}", e.what());
+        co_return common::Result<std::vector<models::File>>::Error("获取文件列表失败");
+    }
+}
+
+Task<common::Result<std::vector<models::File>>> 
+FileService::GetFilesByMessageId(const std::string& message_id) {
+    try {
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        auto result = txn.exec_params(
+            "SELECT id, user_id, message_id, name, type, size, url, created_at "
+            "FROM files WHERE message_id = $1",
+            message_id
+        );
+        
+        std::vector<models::File> files;
+        for (const auto& row : result) {
+            models::File file;
+            file.id = row[0].as<std::string>();
+            file.user_id = row[1].as<std::string>();
+            file.message_id = row[2].as<std::string>();
+            file.name = row[3].as<std::string>();
+            file.type = row[4].as<std::string>();
+            file.size = row[5].as<size_t>();
+            file.url = row[6].as<std::string>();
+            file.created_at = row[7].as<std::string>();
+            
+            files.push_back(file);
+        }
+        
+        txn.commit();
+        db_pool.ReleaseConnection(conn);
+        
+        co_return common::Result<std::vector<models::File>>::Ok(files);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFilesByMessageId: {}", e.what());
+        co_return common::Result<std::vector<models::File>>::Error("获取文件列表失败");
+    }
+}
+
+Task<common::Result<std::vector<uint8_t>>> 
+FileService::GetFileContent(const std::string& file_id) {
+    try {
+        // 先获取文件信息
+        auto file_result = co_await GetFileById(file_id);
+        if (file_result.IsError()) {
+            co_return common::Result<std::vector<uint8_t>>::Error(file_result.GetError());
+        }
+        
+        const auto& file = file_result.GetValue();
+        
+        // 获取文件路径
+        std::string filename = file.url.substr(file.url.find_last_of('/') + 1);
+        std::string filepath = upload_dir_ + "/" + filename;
+        
+        // 读取文件内容
+        std::ifstream file_stream(filepath, std::ios::binary);
+        if (!file_stream) {
+            co_return common::Result<std::vector<uint8_t>>::Error("无法打开文件");
+        }
+        
+        // 获取文件大小
+        file_stream.seekg(0, std::ios::end);
+        size_t size = file_stream.tellg();
+        file_stream.seekg(0, std::ios::beg);
+        
+        // 读取文件内容到缓冲区
+        std::vector<uint8_t> buffer(size);
+        file_stream.read(reinterpret_cast<char*>(buffer.data()), size);
+        
+        co_return common::Result<std::vector<uint8_t>>::Ok(buffer);
+    } catch (const std::exception& e) {
+        spdlog::error("Error in GetFileContent: {}", e.what());
+        co_return common::Result<std::vector<uint8_t>>::Error("获取文件内容失败");
+    }
+}
+
+Task<common::Result<void>> 
+FileService::DeleteFile(const std::string& file_id) {
+    try {
+        // 先获取文件信息
+        auto file_result = co_await GetFileById(file_id);
+        if (file_result.IsError()) {
+            co_return common::Result<void>::Error(file_result.GetError());
+        }
+        
+        const auto& file = file_result.GetValue();
+        
+        // 获取文件路径
+        std::string filename = file.url.substr(file.url.find_last_of('/') + 1);
+        std::string filepath = upload_dir_ + "/" + filename;
+        
+        // 从数据库中删除文件记录
+        auto& db_pool = core::db::ConnectionPool::GetInstance();
+        auto conn = co_await db_pool.GetConnectionAsync();
+        
+        pqxx::work txn(*conn);
+        txn.exec_params("DELETE FROM files WHERE id = $1", file_id);
+        txn.commit();
+        
+        db_pool.ReleaseConnection(conn);
+        
+        // 从文件系统中删除文件
+        if (fs::exists(filepath)) {
+            fs::remove(filepath);
+        }
+        
+        co_return common::Result<void>::Ok();
+    } catch (const std::exception& e) {
+        spdlog::error("Error in DeleteFile: {}", e.what());
+        co_return common::Result<void>::Error("删除文件失败");
+    }
+}
+
+Task<common::Result<ParsedFormData>> 
+FileService::ParseMultipartFormData(const core::http::Request& request) {
+    // 简易实现：返回空解析结果
+    ParsedFormData form_data;
+    co_return common::Result<ParsedFormData>::Ok(form_data);
+}
+
+std::string FileService::GetFileExtension(const std::string& filename) {
+    size_t pos = filename.find_last_of('.');
+    if (pos != std::string::npos) {
+        return filename.substr(pos);
+    }
+    return "";
+}
+
+bool FileService::IsAllowedExtension(const std::string& extension) {
+    for (const auto& allowed_ext : allowed_extensions_) {
+        if (core::utils::StringUtils::ToLower(extension) == core::utils::StringUtils::ToLower(allowed_ext)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string FileService::SanitizeFilename(const std::string& filename) {
+    // 移除路径部分，只保留文件名
+    std::string sanitized = filename;
+    size_t pos = sanitized.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        sanitized = sanitized.substr(pos + 1);
+    }
+    
+    // 移除危险字符
+    sanitized = std::regex_replace(sanitized, std::regex("[^a-zA-Z0-9._-]"), "_");
+    
+    return sanitized;
+}
